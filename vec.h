@@ -25,6 +25,11 @@ static inline float rsqrtf(float const value)
     return _mm_cvtss_f32(_mm_rsqrt_ss(_mm_set_ss(value)));
 }
 
+static inline float flerp(float const a, float const b, float const c)
+{
+    return a + c * (b - a);
+}
+
 #ifdef REAL_MSVC
 #pragma function(sqrtf)
 #endif

@@ -49,8 +49,6 @@ typedef struct ShaderConstants
     int unsigned player2_score;
 } ShaderConstants;
 
-//char (*__kaboom)[sizeof( struct ShaderConstants )] = 1;
-
 typedef enum PlayerMode
 {
     PLAYER1_SERVE,
@@ -442,29 +440,13 @@ static void State_draw(State *const this)
 static void State_update_ai(State *const this, Player *const player, float const dt)
 {
     float const correct_width = (float) this->width / (float) this->height;
-    float const dy = 0.25f * dt;
-
     if (this->ball_position.x > correct_width / 2 && this->ball_velocity.x > 0)
     {
-        if (player->pos.y < this->ball_position.y - dy)
-        {
-            player->pos.y += dy;
-        }
-        else if (player->pos.y > this->ball_position.y + dy)
-        {
-            player->pos.y -= dy;
-        }
+        player->pos.y = flerp(player->pos.y, this->ball_position.y, dt);
     }
     else
     {
-        if (player->pos.y < 0.5f - dy)
-        {
-            player->pos.y += dy;
-        }
-        else if (player->pos.y > 0.5f + dy)
-        {
-            player->pos.y -= dy;
-        }
+        player->pos.y = flerp(player->pos.y, 0.5f, dt);
     }
 
     player->pos.y = fclamp(player->pos.y, PLAYER_SIZE.y / 2.0f, 1.0f - PLAYER_SIZE.y / 2.0f);
@@ -485,7 +467,7 @@ static inline void State_reset(State *const this)
 
 static void State_update(State *const this, float const frame_delta)
 {
-    if (KeyBitmap_get(this->keys, 'R'))
+    if (this->game_mode !=  GAME_MODE_START && KeyBitmap_get(this->keys, 'R'))
     {
         State_reset(this);
     }
@@ -497,10 +479,10 @@ static void State_update(State *const this, float const frame_delta)
 
     this->player2.pos.x = correct_width - this->player1.pos.x;
 
-    State_update_ai(this, &this->player2, 0.043f * frame_delta);
+    State_update_ai(this, &this->player2, 0.0748f * frame_delta);
 
 
-    #define BOUNCE_STRENGTH (1.25f)
+    #define BOUNCE_STRENGTH (1.5f)
     switch (this->player_mode)
     {
         case PLAYER1_SERVE:
@@ -604,7 +586,7 @@ __declspec(noreturn) void entry(void)
         time_last = __rdtsc();
 
         MSG message;
-        if (PeekMessageW(&message, NULL, 0, 0, PM_REMOVE))
+         if (PeekMessageW(&message, NULL, 0, 0, PM_REMOVE))
         {
             TranslateMessage(&message);
             DispatchMessageW(&message);
