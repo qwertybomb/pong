@@ -79,6 +79,16 @@ static inline void KeyBitmap_flip(KeyBitmap *const this, int const index)
     this->data[index / KEY_BITMAP_BIT_SIZE] ^= ((uint64_t)1 << (index % KEY_BITMAP_BIT_SIZE));
 }
 
+// NOTE: *this might be useful for later
+#if 0
+static inline void KeyBitmap_change(KeyBitmap *const this, int const index, bool const new_bit)
+{
+    this->data[index / KEY_BITMAP_BIT_SIZE] ^=
+        (-((uint64_t) new_bit) ^ this->data[index / KEY_BITMAP_BIT_SIZE]) &
+        ((uint64_t) 1 << (index % KEY_BITMAP_BIT_SIZE));
+}
+#endif
+
 typedef enum GameMode
 {
     GAME_MODE_START,
@@ -118,6 +128,8 @@ typedef struct State
     KeyBitmap keys;
 
     GameMode game_mode;
+
+    bool is_paused;
 } State;
 
 #define BALL_RADIUS (0.025f)
@@ -167,7 +179,6 @@ static LRESULT __stdcall WindowProc(HWND const window_handle, UINT const message
             this->height = ((int) lParam >> 16) & 0xFFFF;
             if (this->width == 0 || this->height == 0 || this->device == NULL) break;
 
-
             // unbind render target
             this->device_context->lpVtbl->OMSetRenderTargets(this->device_context, 1,
                                                              &(ID3D11RenderTargetView *) {NULL}, NULL);
@@ -207,13 +218,13 @@ static LRESULT __stdcall WindowProc(HWND const window_handle, UINT const message
 
         case WM_MOUSEMOVE:
         {
-            int const mouse_y = ((int) lParam >> 16) & 0xFFFF;
+            if (!this->is_paused)
+            {
+                int const mouse_y = ((int) lParam >> 16) & 0xFFFF;
+                float const new_player_height = 1.0f - (float) mouse_y / (float) this->height;
 
-            // clamp the player position so it does not go off the screen
-            float const new_player_height = fclamp(1.0f - (float) mouse_y / (float) this->height,
-                                                   PLAYER_SIZE.y / 2.0f, 1.0f - PLAYER_SIZE.y / 2.0f);
-
-            this->player1.pos.y = new_player_height;
+                this->player1.pos.y = new_player_height;
+            }
 
             break;
         }
@@ -221,7 +232,11 @@ static LRESULT __stdcall WindowProc(HWND const window_handle, UINT const message
         case WM_KEYUP:
         case WM_KEYDOWN:
         {
-            if (((lParam >> 30) & 0x1) == ((lParam >> 31) & 0x1))
+            if (wParam == 'P')
+            {
+                this->is_paused ^= 1;
+            }
+            else if (((lParam >> 30) & 0x1) == ((lParam >> 31) & 0x1))
             {
                 KeyBitmap_flip(&this->keys, wParam);
             }
@@ -435,8 +450,6 @@ static void State_draw(State *const this)
     this->swap_chain->lpVtbl->Present(this->swap_chain, 1, 0);
 }
 
-
-
 static void State_update_ai(State *const this, Player *const player, float const dt)
 {
     float const correct_width = (float) this->width / (float) this->height;
@@ -467,10 +480,25 @@ static inline void State_reset(State *const this)
 
 static void State_update(State *const this, float const frame_delta)
 {
+    if (this->is_paused) return;
+
     if (this->game_mode !=  GAME_MODE_START && KeyBitmap_get(this->keys, 'R'))
     {
         State_reset(this);
     }
+
+    if (KeyBitmap_get(this->keys, VK_UP))
+    {
+        this->player1.pos.y += 0.025f * frame_delta;
+    }
+
+    if (KeyBitmap_get(this->keys, VK_DOWN))
+    {
+        this->player1.pos.y -= 0.025f * frame_delta;
+    }
+
+    // clamp the player position so it does not go off the screen
+    this->player1.pos.y = fclamp(this->player1.pos.y, PLAYER_SIZE.y / 2.0f, 1.0f - PLAYER_SIZE.y / 2.0f);
 
     float const correct_width = (float) this->width / (float) this->height;
 
@@ -479,10 +507,10 @@ static void State_update(State *const this, float const frame_delta)
 
     this->player2.pos.x = correct_width - this->player1.pos.x;
 
-    State_update_ai(this, &this->player2, 0.0748f * frame_delta);
+    State_update_ai(this, &this->player2, 0.0925f * frame_delta);
 
 
-    #define BOUNCE_STRENGTH (1.5f)
+    #define BOUNCE_STRENGTH (1.75f)
     switch (this->player_mode)
     {
         case PLAYER1_SERVE:
@@ -493,6 +521,8 @@ static void State_update(State *const this, float const frame_delta)
             {
                 this->player_mode = PLAYER2_FACE;
                 this->ball_velocity = INITIAL_BALL_VELOCITY;
+
+                this->game_mode = GAME_MODE_GAME;
             }
 
             break;
@@ -517,11 +547,11 @@ static void State_update(State *const this, float const frame_delta)
         case PLAYER1_FACE:
         {
             if (this->ball_position.x - BALL_RADIUS <= this->player1.pos.x + PLAYER_SIZE.x / 2 &&
-                fabsf(this->ball_position.y - this->player1.pos.y) <= PLAYER_SIZE.y - BALL_RADIUS * 2.0f)
+                fabsf(this->ball_position.y - this->player1.pos.y) <= PLAYER_SIZE.y / 2.0f + BALL_RADIUS * 2.0f)
             {
                 float const percentage = (this->ball_position.y - this->player1.pos.y) / (PLAYER_SIZE.y / 2.0f);
-                this->ball_velocity.x *= -1.0f;
                 this->ball_velocity.y = INITIAL_BALL_VELOCITY.x * percentage * BOUNCE_STRENGTH;
+                this->ball_velocity.x *= -1.0f;
 
                 this->player_mode = PLAYER2_FACE;
             }
@@ -532,11 +562,11 @@ static void State_update(State *const this, float const frame_delta)
         case PLAYER2_FACE:
         {
             if (this->ball_position.x + BALL_RADIUS >= this->player2.pos.x - PLAYER_SIZE.x / 2 &&
-                fabsf(this->ball_position.y - this->player2.pos.y) <= PLAYER_SIZE.y - BALL_RADIUS * 2.0f)
+                fabsf(this->ball_position.y - this->player2.pos.y) <= PLAYER_SIZE.y / 2.0f + BALL_RADIUS * 2.0f)
             {
                 float const percentage = (this->ball_position.y - this->player2.pos.y) / (PLAYER_SIZE.y / 2.0f);
-                this->ball_velocity.x *= -1.0f;
                 this->ball_velocity.y = INITIAL_BALL_VELOCITY.x * percentage * BOUNCE_STRENGTH;
+                this->ball_velocity.x *= -1.0f;
 
                 this->player_mode = PLAYER1_FACE;
             }
@@ -586,7 +616,7 @@ __declspec(noreturn) void entry(void)
         time_last = __rdtsc();
 
         MSG message;
-         if (PeekMessageW(&message, NULL, 0, 0, PM_REMOVE))
+        if (PeekMessageW(&message, NULL, 0, 0, PM_REMOVE))
         {
             TranslateMessage(&message);
             DispatchMessageW(&message);
@@ -622,7 +652,6 @@ __declspec(noreturn) void entry(void)
 
         State_update(&state, frame_delta);
 
-        // remove warnings
         (void)shader_constants->player_size;
         (void)shader_constants->ball_radius;
         (void)shader_constants->aspect_ratio;

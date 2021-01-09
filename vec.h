@@ -3,11 +3,25 @@
 extern int _fltused;
 int _fltused = 0;
 
+#define PI 3.14159f
+
 static inline float fabsf(float value)
 {
+    (void)_fltused;
+
     // NOTE: this is UB but it will not be a problem for most compilers
     *(uint32_t*)&value &= 0x7FFFFFFFu;
     return value;
+}
+
+static inline float fsine(float const x)
+{
+    return (4.0f / PI) * x + (-4.0f / (PI * PI)) * x * fabsf(x);
+}
+
+static inline float fcosine(float const x)
+{
+    return fsine(x  + PI / 2.0f);
 }
 
 static inline float fmaxf(float const a, float const b)
