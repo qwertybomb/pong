@@ -232,7 +232,7 @@ static LRESULT __stdcall WindowProc(HWND const window_handle, UINT const message
         case WM_KEYUP:
         case WM_KEYDOWN:
         {
-            if (wParam == 'P')
+            if (message == WM_KEYDOWN && wParam == 'P')
             {
                 this->is_paused ^= 1;
             }
