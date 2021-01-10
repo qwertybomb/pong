@@ -14,16 +14,6 @@ static inline float fabsf(float value)
     return value;
 }
 
-static inline float fsine(float const x)
-{
-    return (4.0f / PI) * x + (-4.0f / (PI * PI)) * x * fabsf(x);
-}
-
-static inline float fcosine(float const x)
-{
-    return fsine(x  + PI / 2.0f);
-}
-
 static inline float fmaxf(float const a, float const b)
 {
     return a < b ? b : a;
